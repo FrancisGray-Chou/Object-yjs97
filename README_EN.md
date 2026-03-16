@@ -75,4 +75,4 @@ Future versions may include:
 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourname/Object-yjs97.git
+git clone https://github.com/FrancisGray-Chou/Object-yjs97.git
