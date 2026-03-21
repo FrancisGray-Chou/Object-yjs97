@@ -1,9 +1,23 @@
 import MetalKit
 import simd
 
+struct BoundingBox {
+    var minBounds: simd_float3
+    var maxBounds: simd_float3
+    func intersects(_ other: BoundingBox) -> Bool {
+        return
+            (minBounds.x <= other.maxBounds.x
+            && maxBounds.x >= other.minBounds.x)
+            && (minBounds.y <= other.maxBounds.y
+                && maxBounds.y >= other.minBounds.y)
+            && (minBounds.z <= other.maxBounds.z
+                && maxBounds.z >= other.minBounds.z)
+    }
+}
 struct Vertex {
     var position: simd_float4  // 3D position
     var texCoord: simd_float2  // texture(u, v)
+
 }
 
 func rotationYMatrix(angle: Float) -> simd_float4x4 {
@@ -67,6 +81,17 @@ class GameObject {
     var scale: simd_float3
     var texture: MTLTexture?
 
+    var name: String = ""
+    var isColleted: Bool = false
+
+    var boundingBox: BoundingBox {
+        let halfsize = scale / 2.0
+        return BoundingBox(
+            minBounds: position - halfsize,
+            maxBounds: position + halfsize
+        )
+    }
+
     init(position: simd_float3, texture: MTLTexture?) {
         self.position = position
         self.rotation = simd_float3(0, 0, 0)
@@ -117,6 +142,14 @@ class Camera {
         return simd_normalize(simd_cross(simd_float3(0, 1, 0), forward))
     }
 
+    var boundingBox: BoundingBox {
+        let radius: Float = 0.3
+        return BoundingBox(
+            minBounds: position - simd_float3(radius, radius, radius),
+            maxBounds: position + simd_float3(radius, radius, radius)
+        )
+    }
+
     func viewMatrix() -> simd_float4x4 {
         // 根据当前的转头角度 (yaw, pitch) 算出正在盯着的正前方
         let forward = simd_float3(
@@ -163,6 +196,7 @@ class Renderer: NSObject, MTKViewDelegate {
     var gameObjects: [GameObject] = []
     var camera = Camera()
     var pressedKeys: Set<String> = []
+    var scores: Int = 0
 
     init?(metalKitView: MTKView) {
         self.device = metalKitView.device!
@@ -237,8 +271,9 @@ class Renderer: NSObject, MTKViewDelegate {
         // 2. 创建猫咪收集物 (悬浮在地面上)
         let catBox = GameObject(
             position: simd_float3(0, 0, 3.0),
-            texture: catTexture
+            texture: catTexture,
         )
+        catBox.name = "cat"
 
         gameObjects.append(ground)
         gameObjects.append(catBox)
@@ -378,6 +413,15 @@ class Renderer: NSObject, MTKViewDelegate {
         let viewMatrix = camera.viewMatrix()
 
         for object in gameObjects {
+            if object.isColleted { continue }
+            if object.name == "cat" {
+                if camera.boundingBox.intersects(object.boundingBox) {
+                    object.isColleted = true
+                    scores += 1
+                    print("+1")
+                    continue
+                }
+            }
             let modelMatrix = object.modelMatrix()
             var finalMatrix = projection * viewMatrix * modelMatrix
             renderEncoder.setVertexBytes(
