@@ -84,6 +84,40 @@ class GameObject {
     }
 }
 
+// ✨ 新增：摄像机专属的 LookAt 视图矩阵
+func lookAtMatrix(eye: simd_float3, center: simd_float3, up: simd_float3) -> simd_float4x4 {
+    let z = normalize(center - eye) // 眼睛看向目标的方向
+    let x = normalize(cross(up, z)) // 算出摄像机的“右边”
+    let y = cross(z, x)             // 算出摄像机的“正上方”
+    
+    return simd_float4x4(
+        simd_float4(x.x, y.x, z.x, 0),
+        simd_float4(x.y, y.y, z.y, 0),
+        simd_float4(x.z, y.z, z.z, 0),
+        simd_float4(-dot(x, eye), -dot(y, eye), -dot(z, eye), 1)
+    )
+}
+
+class Camera{
+    var position: simd_float3 = [0, 0, 0]
+    var yaw: Float = 0
+    var pitch: Float = 0
+    
+    var forward: simd_float3{
+        return [
+            sin(yaw) * cos(pitch),
+            sin(pitch),
+            cos(yaw) * cos(pitch)
+        ]
+    }
+    
+    func viewMatrix() -> simd_float4x4{
+        let target = position + forward
+        return translationMatrix(x: -position.x, y: -position.y, z: -position.z)
+        
+    }
+}
+
 class Renderer: NSObject, MTKViewDelegate {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
@@ -100,6 +134,7 @@ class Renderer: NSObject, MTKViewDelegate {
     
     // 游戏世界实体列表
     var gameObjects: [GameObject] = []
+    var camera = Camera()
     
     init?(metalKitView: MTKView) {
         self.device = metalKitView.device!
@@ -114,6 +149,7 @@ class Renderer: NSObject, MTKViewDelegate {
         setupPipeline()
         setupBuffer()
         setupTexture()
+        camera.position = simd_float3(0, 0.5, -2.0)
     }
     
     func setupTexture() {
@@ -122,7 +158,7 @@ class Renderer: NSObject, MTKViewDelegate {
             // 1. 加载猫咪
             if let catUrl = Bundle.main.url(forResource: "yjs", withExtension: "png") {
                 do { catTexture = try textureLoader.newTexture(URL: catUrl, options: nil) }
-                catch { print("🚨 猫咪加载失败: \(error)") }
+                catch { print("猫咪加载失败: \(error)") }
             }
             
             // 2. 加载泥土（⚠️ 监控探头已部署）
@@ -131,11 +167,11 @@ class Renderer: NSObject, MTKViewDelegate {
                     dirtTexture = try textureLoader.newTexture(URL: dirtUrl, options: nil)
                     print("🎉🎉🎉 泥土图片加载成功！")
                 } catch {
-                    print("🚨 泥土解码失败: \(error)")
+                    print("泥土解码失败: \(error)")
                 }
             } else {
-                // 🚨 如果执行了这句话，100% 说明没打勾，或者文件名写错了！
-                print("🚨 致命问题：安装包里根本没有找到 dirt.png！请检查：1.名字对不对？ 2.右侧 Target Membership 到底有没有打勾？")
+                // 如果执行了这句话，100% 说明没打勾，或者文件名写错了！
+                print("致命问题：安装包里根本没有找到 dirt.png！请检查：1.名字对不对？ 2.右侧 Target Membership 到底有没有打勾？")
             }
             
             setupWorld()
@@ -252,16 +288,15 @@ class Renderer: NSObject, MTKViewDelegate {
         }
         
         // ✨ 真正的实体渲染循环！
+        let viewMatrix = camera.viewMatrix()
+        
         for object in gameObjects {
             let modelMatrix = object.modelMatrix()
-            var finalMatrix = projection * modelMatrix
-            
+            var finalMatrix = projection * viewMatrix * modelMatrix
             renderEncoder.setVertexBytes(&finalMatrix, length: MemoryLayout<simd_float4x4>.size, index: 1)
-            
-            if let tex = object.texture {
+            if let tex = object.texture{
                 renderEncoder.setFragmentTexture(tex, index: 0)
             }
-            
             renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: 36, indexType: .uint16, indexBuffer: indexBuffer, indexBufferOffset: 0)
         }
         
